@@ -1,0 +1,105 @@
+---
+title: "Human Activity Recognition: Weight Lifting Exercise"
+output: html_document
+---
+
+## Excutive Summary:
+Portable, wearable sensor devices attached to various body locations recorded movements to be used in predictive model building for identifying distinctive body motions associated with weight lifting exercise. In this study, Nike FuelBand and Fitbit were employed as measurement device system. The main goal of this study is to build a most accurate classification model based on the Random-Forest method to classify unique exercise movements. I have used both non-PCA and PCA to implement data reduction prior to Random-Forest model training. The main train data was splitted into 75-25 train and test sets for model building and validation. The final predictive model was then applied to the main test data to validate the correctness of the model.
+
+Load main R library packages:
+```{r package1, results='hide', message=FALSE, warning=FALSE}
+require(data.table); library(caret)
+```
+
+Load knitr & markdown packages:
+```{r package2, results='hide', message=FALSE, warning=FALSE}
+require(knitr); require(markdown)
+```
+
+Load the untreated raw data sets
+```{r eq1, comment=""}
+trainingRaw <- read.csv("pml-training.csv", na.strings=c("","NA"))
+testingRaw <- read.csv("pml-testing.csv")
+```
+
+Here short steps are taken to replace missing values with "NA" and then removed. Initial 160 variables are cut down to 60 variables.
+```{r eq2, comment=""}
+trainingNACol <- apply(trainingRaw, 2, function(x) {!anyNA(x)})
+trainingNoNA <- trainingRaw[, trainingNACol]
+testingNACol <- apply(testingRaw, 2, function(x) {!anyNA(x)})
+testingNoNA <- testingRaw[, testingNACol]
+```
+
+Further steps to remove unuseful features: `user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window`. After this step, 60 variables are further reduced to 53 variables.
+```{r eq3, comment=""}
+trainingNoNAFF <- trainingNoNA[, -c(1:7)]
+testingNoNAFF <- testingNoNA[, -c(1:7)]
+```
+
+Partition main train data into 75-25 training and testing sets.
+```{r eq4, comment=""}
+set.seed(3433)
+inTrain <- createDataPartition(y=trainingNoNAFF$classe, p=3/4, list=F)
+training <- trainingNoNAFF[inTrain, ]
+testing <- trainingNoNAFF[-inTrain, ]
+```
+
+The Principle Component Analysis (PCA) performed on training data with variance threshold set equal to 90%. This identified 17 total PCA components to be used in the next model building step.
+```{r eq5, comment=""}
+preProc <- preProcess(training[,-53], method="pca", thresh=0.9)
+trainPC <- predict(preProc, training[,-53])
+str(preProc)
+```
+
+The model is trained on PCA processed data via Random-Forest method. 4-fold cross-validated resampling employed. The "in-sample error" is `1-accuracy=0.037` or `3.7%`
+```{r eq6, comment=""}
+modelFit <- train(training$classe ~., 
+                  method="rf", 
+                  trControl = trainControl(method="cv", number=4), 
+                  data=trainPC)
+modelFit
+```
+
+The cross validation was performed on test data (from 75-25 split). From the confusion matrix, the "out-smaple error" is `1-accuracy=0.0308` or `3.08%`
+```{r eq7, comment=""}
+testPC <- predict(preProc, testing[,-53])
+predictions <- predict(modelFit, testPC)
+confusionMatrix(testing$classe, predictions)
+```
+
+A different model was also built without PCA as done in previous modeling fitting. Again, 4-fold cv reasampling used. The "in-sample error" is `1-accuracy=0.009` or `0.9%`.
+```{r eq8, comment=""}
+nonPCFit <- train(training$classe ~., 
+                  method="rf", 
+                  trControl = trainControl(method="cv", number=4), 
+                  data=training)
+nonPCFit
+```
+
+For non-PCA: The "out-smaple error" is `1-accuracy=0.0069` or `0.69%`
+```{r eq9, comment=""}
+nonPCPred <- predict(nonPCFit, newdata=testing)
+confusionMatrix(nonPCPred, testing$classe)
+```
+
+PCA and non-PCA Predictive Models built in prior training process are used to generate the outcome values on pml-testing data. With PCA:
+```{r eq10, comment=""}
+answers <- predict(modelFit, predict(preProc, testingNoNAFF[,-53]))
+```
+
+Without PCA:
+```{r eq11, comment=""}
+answers <- predict(nonPCFit, testingNoNAFF[,-53])
+```
+
+Write prediction answers to 20 text files for submissions. The model trained with PCA incorrectly predicted two values, whereas the full predictors based non-PCA passed all 20 tests.
+```{r eq12, comment=""}
+# pml_write_files = function(x){
+#   n = length(x)
+#   for(i in 1:n){
+#     filename = paste0("problem_id_",i,".txt")
+#     write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+#   }
+# }
+# pml_write_files(answers)
+```
